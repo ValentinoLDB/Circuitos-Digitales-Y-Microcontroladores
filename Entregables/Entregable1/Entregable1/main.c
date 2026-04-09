@@ -2,73 +2,154 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
+// ESTA ES LA LÍNEA MÁGICA QUE FUERZA LA OPTIMIZACIÓN
+// Garantiza que los tiempos del Neopixel sean perfectos sin importar la configuración del programa
+#pragma GCC optimize ("O3")
+
+// =========================================================================
+// FUNCIONES DEL NEOPIXEL (WS2812B)
+// =========================================================================
+
+void ws2812_mandar_byte(uint8_t dato) {
+	for(uint8_t i = 0; i < 8; i++) {
+		if(dato & 0x80) {
+			// Bit '1'
+			PORTB |= (1 << PORTB0);
+			__builtin_avr_delay_cycles(12);
+			PORTB &= ~(1 << PORTB0);
+			__builtin_avr_delay_cycles(6);
+			} else {
+			// Bit '0'
+			PORTB |= (1 << PORTB0);
+			__builtin_avr_delay_cycles(5);
+			PORTB &= ~(1 << PORTB0);
+			__builtin_avr_delay_cycles(12);
+		}
+		dato = dato << 1;
+	}
+}
+
+void ws2812_pintar_led(uint8_t rojo, uint8_t verde, uint8_t azul) {
+	// El orden del WS2812B es GRB
+	ws2812_mandar_byte(verde);
+	ws2812_mandar_byte(rojo);
+	ws2812_mandar_byte(azul);
+}
+
+void ws2812_latch(void) {
+	_delay_us(55); // Resetea y muestra los colores
+}
+
+// =========================================================================
+// PROGRAMA PRINCIPAL
+// =========================================================================
+
 int main(void) {
-	// 1. CONFIGURACIÓN DE HARDWARE
-	DDRD = 0xFF;    // Puerto D todo como salida (Para los 8 LEDs)
-	PORTD = 0x00;   // Arrancamos con todos los LEDs apagados
-
-	DDRC &= ~(1 << DDC0);  // Pin PC0 como entrada (Pulsador 1)
-	PORTC |= (1 << PORTC0); // Habilitar resistencia Pull-up en PC0
-
-	// 2. VARIABLES DE LA MÁQUINA DE ESTADOS
-	int secuencia_actual = 0; // 0 = Secuencia 'a' (Sube), 1 = Secuencia 'b' (Rebota)
-	int paso = 0;             // Indica qué bit del LED hay que prender (0 a 7)
-	int direccion = 1;        // 1 = Hacia la izquierda, -1 = Hacia la derecha (Para el rebote)
+	// --- 1. CONFIGURACIÓN DE HARDWARE ---
+	DDRD = 0xFF;    // Puerto D salidas (8 LEDs comunes)
+	PORTD = 0x00;   // Apagados por defecto
 	
-	int estado_boton_anterior = 1; // Asumimos que arranca sin apretar (1 lógico por el pull-up)
+	DDRB |= (1 << DDB0); // PB0 salida (Datos Neopixel)
+	PORTB &= ~(1 << PORTB0); // Arranca en 0V
 
-	// 3. EL SUPER LOOP
+	DDRC &= ~((1 << DDC0) | (1 << DDC1)); // PC0 y PC1 como entradas (Botones)
+	PORTC |= (1 << PORTC0) | (1 << PORTC1); // Activar resistencias Pull-up internas
+
+	// --- 2. VARIABLES DE ESTADO ---
+	// Variables Puerto D
+	int seq_D = 0;      // 0 = Sube (a), 1 = Rebota (b)
+	int paso_D = 0;     // Qué LED prender
+	int dir_D = 1;      // Dirección del rebote
+	
+	// Variables Neopixel (Puerto B)
+	int seq_B = 0;      // 0 = Pares/Impares (c), 1 = Chase verde (d)
+	int paso_B = 7;     // Para la secuencia chase (arranca a la derecha)
+	int estado_seq_c = 0; // 0 = Turno Rojo, 1 = Turno Azul
+
+	// Contadores de tiempo (Ticks)
+	int cont_10ms_D = 0;
+	int cont_10ms_B = 0;
+
+	// Estados anteriores de los botones (1 = sin apretar)
+	int estado_C0_ant = 1;
+	int estado_C1_ant = 1;
+
+	// --- 3. EL SUPER LOOP ---
 	while (1) {
-		
-		// --- TAREA A: ACTUALIZAR LAS LUCES ---
-		PORTD = (1 << paso); // Prende el LED correspondiente al "paso" actual
+		// EL RELOJ MAESTRO: Esperamos 10ms en cada vuelta del loop
+		_delay_ms(10);
+		cont_10ms_D++;
+		cont_10ms_B++;
 
-		if (secuencia_actual == 0) {
-			// Lógica de Secuencia 'a' (LSB hacia MSB y repite)
-			paso++;
-			if (paso > 7) {
-				paso = 0; // Si se pasó del último, vuelve al primero
-			}
+		// --- TAREA A: LECTURA DE BOTONES ---
+		int estado_C0_act = (PINC & (1 << PINC0)) ? 1 : 0;
+		int estado_C1_act = (PINC & (1 << PINC1)) ? 1 : 0;
+
+		// Si se apretó el botón C0 (Cambio de secuencia D)
+		if (estado_C0_ant == 1 && estado_C0_act == 0) {
+			seq_D = (seq_D == 0) ? 1 : 0; // Alternar entre 0 y 1
+			paso_D = (seq_D == 1) ? 7 : 0; // Si pasa a 'b', arranca arriba
+			dir_D = -1;
 		}
-		else {
-			// Lógica de Secuencia 'b' (MSB, baja y rebota en los extremos)
-			paso += direccion;
-			if (paso >= 7) {
-				direccion = -1; // Si toca el techo (MSB), cambia la dirección para bajar
-			}
-			if (paso <= 0) {
-				direccion = 1;  // Si toca el piso (LSB), cambia la dirección para subir
-			}
+		estado_C0_ant = estado_C0_act;
+
+		// Si se apretó el botón C1 (Cambio de secuencia Neopixel)
+		if (estado_C1_ant == 1 && estado_C1_act == 0) {
+			seq_B = (seq_B == 0) ? 1 : 0; // Alternar entre 0 y 1
+			paso_B = 7; // Reset de la posición del chase
 		}
+		estado_C1_ant = estado_C1_act;
 
-		// --- TAREA B: LA ESPERA "NO BLOQUEANTE" (El truco del profe) ---
-		// Queremos esperar 100ms, pero lo hacemos en 10 cuotas de 10ms.
-		int cambiar_secuencia = 0; // Bandera para saber si apretaron el botón
 
-		for (int i = 0; i < 10; i++) {
-			_delay_ms(10);
+		// --- TAREA B: ACTUALIZAR LEDs COMUNES (Cada 100ms) ---
+		if (cont_10ms_D >= 10) {
+			cont_10ms_D = 0; // Reiniciar contador
 			
-			// Leemos el botón en C0 (0 significa que está apretado por ir a tierra)
-			int estado_boton_actual = (PINC & (1 << PINC0)) ? 1 : 0;
+			PORTD = (1 << paso_D); // Dibujar en los LEDs
 
-			// Detección de "Flanco Descendente": Solo actuamos si ANTES estaba suelto y AHORA está apretado
-			if (estado_boton_anterior == 1 && estado_boton_actual == 0) {
-				cambiar_secuencia = 1;
+			if (seq_D == 0) {
+				// Secuencia a: Sube de LSB a MSB
+				paso_D++;
+				if (paso_D > 7) paso_D = 0;
+				} else {
+				// Secuencia b: Baja y rebota
+				paso_D += dir_D;
+				if (paso_D >= 7) dir_D = -1;
+				if (paso_D <= 0) dir_D = 1;
 			}
-			estado_boton_anterior = estado_boton_actual; // Guardamos el estado para la próxima vuelta
 		}
 
-		// --- TAREA C: GESTIONAR EL CAMBIO ---
-		if (cambiar_secuencia == 1) {
-			if (secuencia_actual == 0) {
-				secuencia_actual = 1; // Pasamos a secuencia 'b'
-				paso = 7;             // Arrancamos desde el MSB como pide el TP
-				direccion = -1;       // Configurado para bajar
+		// --- TAREA C: ACTUALIZAR NEOPIXELS (Cada 150ms) ---
+		if (cont_10ms_B >= 15) {
+			cont_10ms_B = 0; // Reiniciar contador
+			
+			if (seq_B == 0) {
+				// Secuencia c: Pares rojos, LUEGO impares azules
+				if (estado_seq_c == 0) {
+					for(int i = 0; i < 8; i++) {
+						if (i % 2 == 0) ws2812_pintar_led(255, 0, 0); // Par: Rojo
+						else            ws2812_pintar_led(0, 0, 0);   // Impar: Apagado
+					}
+					estado_seq_c = 1; // Preparamos para que la próxima vez sea azul
+					} else {
+					for(int i = 0; i < 8; i++) {
+						if (i % 2 != 0) ws2812_pintar_led(0, 0, 255); // Impar: Azul
+						else            ws2812_pintar_led(0, 0, 0);   // Par: Apagado
+					}
+					estado_seq_c = 0; // Preparamos para que la próxima vez sea rojo
+				}
 				} else {
-				secuencia_actual = 0; // Volvemos a secuencia 'a'
-				paso = 0;             // Arrancamos desde LSB
+				// Secuencia d: Chase verde de derecha a izquierda
+				for(int i = 0; i < 8; i++) {
+					if (i == paso_B) ws2812_pintar_led(0, 255, 0); // Prender verde el actual
+					else             ws2812_pintar_led(0, 0, 0);   // Apagar el resto
+				}
+				paso_B--; // Mover a la izquierda
+				if (paso_B < 0) paso_B = 7; // Si llega al borde, vuelve a la derecha
 			}
+			
+			ws2812_latch(); // Confirmar los colores a la tira
 		}
 		
-	} // Fin del while(1)
+	} // Fin del Super Loop
 }
