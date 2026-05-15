@@ -10,12 +10,12 @@ void KEYPAD_Init();
 uint8_t KeypadUpdate(void);
 uint8_t KEYPAD_Scan(uint8_t *pkey);
 
-// Matriz actualizada para coincidir con la calculadora de Proteus
+// Matriz restaurada al formato del TP2 (Figura 1)
 const uint8_t teclado[4][4] = {
-	{'7','8','9','/'},
-	{'4','5','6','X'},
-	{'1','2','3','-'},
-	{'C','0','=','+'}
+	{'1','2','3','A'},
+	{'4','5','6','B'},
+	{'7','8','9','C'},
+	{'*','0','#','D'}
 };
 
 int main(void)
