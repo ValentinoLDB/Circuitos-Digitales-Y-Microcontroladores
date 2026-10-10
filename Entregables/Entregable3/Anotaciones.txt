@@ -1,0 +1,3 @@
+el display no lo vamos a usar en principio
+dht11 asair es nuestro sensor, buscar marca aosong para encontrar el pdf de la hoja de datos
+lo de la UART esta hecho en el ejemplo de la clase 13
