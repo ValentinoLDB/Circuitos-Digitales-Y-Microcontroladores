@@ -1,19 +1,30 @@
-# Archivos temporales de Proteus y Atmel Studio
-**/.vs/
-**/Debug/
-**/Release/
-**/Project Backups/
-**/*.workspace
-**/*.atsuo
+# Visual Studio / Atmel / Microchip Studio
+.vs/
+*.atsuo
+Debug/
+Release/
+*.componentinfo.xml
 
-# Salidas de compilacion
-**/*.o
-**/*.d
-**/*.elf
-**/*.eep
-**/*.hex
-**/*.lss
-**/*.map
-**/*.srec
-**/makedep.mk
-**/Makefile
+# Proteus temporales y backups
+*.workspace
+Project Backups/
+*.pdsbak
+
+# Documentos y enunciados
+*.pdf
+*.docx
+*.doc
+
+# Paquetes y archivos generados
+*.rar
+*.zip
+*.o
+*.d
+*.elf
+*.eep
+*.hex
+*.lss
+*.map
+*.srec
+makedep.mk
+Makefile
