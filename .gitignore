@@ -1,0 +1,19 @@
+# Archivos temporales de Proteus y Atmel Studio
+**/.vs/
+**/Debug/
+**/Release/
+**/Project Backups/
+**/*.workspace
+**/*.atsuo
+
+# Salidas de compilacion
+**/*.o
+**/*.d
+**/*.elf
+**/*.eep
+**/*.hex
+**/*.lss
+**/*.map
+**/*.srec
+**/makedep.mk
+**/Makefile
